@@ -48,7 +48,6 @@ class DocumentsController < ApplicationController
       return
     end
     
-
     authorize @document
   end
 
