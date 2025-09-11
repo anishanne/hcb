@@ -49,8 +49,6 @@ class DocumentsController < ApplicationController
     end
     
 
-    dsdsd
-    
     authorize @document
   end
 
