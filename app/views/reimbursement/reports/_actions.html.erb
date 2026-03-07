@@ -1,4 +1,4 @@
-<% member_viewing = !OrganizerPosition.find_by(user: current_user, event: report.event)&.manager? && current_user != report.user && !admin_signed_in? %>
+<% member_viewing = !@is_manager && current_user != report.user && !admin_signed_in? %>
 
 <div class="flex flex-col-reverse" id="action-wrapper">
   <%# Using a reverse column flex container, we can
@@ -325,7 +325,8 @@
       Re-open report for review
     <% end %>
   <% end %>
-  <% if report.expenses.any? %>
+  <% expenses_to_sum = (@ordered_expenses || report.expenses.to_a).reject(&:is_fee?) %>
+  <% if (@ordered_expenses || report.expenses.to_a).any? %>
     <div class="card mt2 <%= "closed" if report.closed? || member_viewing %>" id="summary">
       <div class="stat stat--small" style="flex-shrink: 0;">
         <span class="stat__label">Amount requested</span>
@@ -334,7 +335,7 @@
       <% if report.locked? %>
         <div class="stat stat--small stat--plain" style="flex-shrink: 0;">
           <span class="stat__label">Expenses approved</span>
-          <span class="stat__value"><%= report.expenses.approved.to_sum.count %>/<%= report.expenses.to_sum.count %></span>
+          <span class="stat__value"><%= expenses_to_sum.count(&:approved?) %>/<%= expenses_to_sum.count %></span>
         </div>
         <div class="stat stat--small" style="flex-shrink: 0;">
           <span class="stat__label">Amount approved</span>
@@ -349,11 +350,11 @@
       <% else %>
         <div class="stat stat--small stat--plain" style="flex-shrink: 0;">
           <span class="stat__label">Total expenses</span>
-          <span class="stat__value"><%= report.expenses.to_sum.count %></span>
+          <span class="stat__value"><%= expenses_to_sum.count %></span>
         </div>
         <div class="stat stat--small stat--plain" style="flex-shrink: 0;">
           <span class="stat__label">Complete</span>
-          <span class="stat__value"><%= report.expenses.to_sum.complete.count %>/<%= report.expenses.to_sum.count %></span>
+          <span class="stat__value"><%= report.expenses.to_sum.complete.count %>/<%= expenses_to_sum.count %></span>
         </div>
       <% end %>
       <p class="mt0 mb0" id="summary-hint">

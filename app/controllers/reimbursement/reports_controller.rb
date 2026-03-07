@@ -68,9 +68,33 @@ module Reimbursement
       authorize @report
       @commentable = @report
       @comments = @commentable.comments
-      @use_user_nav = @event.nil? || current_user == @user && !@event.users.include?(@user) && !auditor_signed_in?
+      @use_user_nav = @event.nil? || current_user == @user && !@event.users.where(id: @user.id).exists? && !auditor_signed_in?
       @editing = params[:edit].to_i
 
+      # Pre-compute once, used by _expenses, _expense, and _actions partials
+      @is_manager = @event && OrganizerPosition.find_by(user: current_user, event: @event)&.manager?
+      @read_only = @report.locked? || (!@is_manager && current_user != @user && !admin_signed_in?)
+
+      # Sort in Ruby from already-loaded association (avoids re-query in _expenses partial)
+      @ordered_expenses = @report.expenses.sort_by(&:created_at)
+
+      # Pre-load move-expense modal data (avoids N identical queries per expense)
+      unless @read_only
+        @user_reports_for_move = current_user.reimbursement_reports
+          .excluding(@report).reject(&:locked?).map { |r| [r.name, r.id] }
+        @event_reports_for_move = if admin_signed_in?
+          (current_user.reimbursement_reports.excluding(@report) +
+            Reimbursement::Report.all.pending.excluding(@report))
+            .reject(&:locked?).map { |r| [r.name, r.id] }
+        elsif @event
+          @event.reimbursement_reports.excluding(@report)
+            .reject(&:locked?).map { |r| [r.name, r.id] }
+        else
+          []
+        end
+        @user_events_for_move = current_user.events.not_hidden.filter_demo_mode(false)
+          .map { |e| [e.name, e.id] }
+      end
     end
 
     def wise_transfer_quote
@@ -114,6 +138,9 @@ module Reimbursement
 
     def edit
       authorize @report
+
+      @is_manager = @event && OrganizerPosition.find_by(user: current_user, event: @event)&.manager?
+      @read_only = @report.locked? || (!@is_manager && current_user != @user && !admin_signed_in?)
     end
 
     def update
@@ -384,7 +411,15 @@ module Reimbursement
     private
 
     def set_report_user_and_event
-      @report = Reimbursement::Report.find(params[:report_id] || params[:id])
+      @report = Reimbursement::Report
+        .includes(
+          :user,
+          :event,
+          :reviewer,
+          :payout_holding,
+          expenses: [:approved_by, :receipts]
+        )
+        .find(params[:report_id] || params[:id])
       @event = @report.event
       @user = @report.user
     rescue ActiveRecord::RecordNotFound

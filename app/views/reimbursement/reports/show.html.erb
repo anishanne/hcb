@@ -210,7 +210,7 @@
   <%= render partial: "blankslate", locals: { report: @report } %>
 </div>
 
-<% if @report.user.payout_method_type == User::PayoutMethod::WiseTransfer.name && @report.expenses.select { |e| e.type == Reimbursement::Expense::Fee.name }.empty? %>
+<% if @report.user.payout_method_type == User::PayoutMethod::WiseTransfer.name && @ordered_expenses.none?(&:is_fee?) %>
   <% footer = capture do %>
     <%= turbo_frame_tag :wise_transfer_quote, loading: :lazy, src: reimbursement_report_wise_transfer_quote_path(@report) do %>
       Fetching latest estimate...
