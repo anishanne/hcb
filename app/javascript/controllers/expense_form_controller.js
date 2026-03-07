@@ -18,6 +18,16 @@ export default class extends Controller {
   }
 
   connect() {
+    this._sidebar = document.querySelector('.app__sidebar')
+
+    this._escapeHandler = e => {
+      if (e.key === 'Escape' && this.enabledValue) {
+        this.formTarget.reset()
+        this.close()
+      }
+    }
+    document.addEventListener('keydown', this._escapeHandler)
+
     for (const field of this.fieldTargets) {
       if (field.nodeName == 'SELECT') {
         field.disabled = !this.enabledValue
@@ -26,13 +36,6 @@ export default class extends Controller {
         field.addEventListener('dblclick', () => this.edit())
         this.#addTooltip(field, 'Double-click to edit...')
       }
-
-      document.addEventListener('keydown', e => {
-        if (e.key === 'Escape' && this.enabledValue) {
-          this.formTarget.reset()
-          this.close()
-        }
-      })
     }
 
     // we don't render the button if the report is reimbursed
@@ -54,6 +57,18 @@ export default class extends Controller {
     this.#card()
     this.#move()
     this.#lightbox()
+  }
+
+  disconnect() {
+    if (this._escapeHandler) {
+      document.removeEventListener('keydown', this._escapeHandler)
+      this._escapeHandler = null
+    }
+    if (this._lightboxClickHandler) {
+      this.lightboxTarget.removeEventListener('click', this._lightboxClickHandler)
+      this._lightboxClickHandler = null
+    }
+    this._sidebar = null
   }
 
   close(e) {
@@ -165,14 +180,13 @@ export default class extends Controller {
 
   #addTooltip(field, label) {
     if (!label || this.lockedValue || this.enabledValue) return
+    if (field.parentNode?.classList?.contains('tooltipped')) return
 
     const fieldWrapper = document.createElement('div')
     field.parentNode.insertBefore(fieldWrapper, field)
     fieldWrapper.appendChild(field)
     fieldWrapper.classList.add('tooltipped', 'tooltipped--n')
     fieldWrapper.setAttribute('aria-label', label)
-
-    window.attachTooltipListener()
   }
 
   #removeTooltip(field) {
@@ -186,16 +200,26 @@ export default class extends Controller {
       this.lightboxTarget.style.display = 'block'
       this.cardTarget.style.position = 'relative'
       this.cardTarget.style.zIndex = '2001'
-      document.querySelector('.app__sidebar').style.zIndex = '1'
-      this.lightboxTarget.addEventListener('click', e => {
+      if (this._sidebar) this._sidebar.style.zIndex = '1'
+
+      if (this._lightboxClickHandler) {
+        this.lightboxTarget.removeEventListener('click', this._lightboxClickHandler)
+      }
+      this._lightboxClickHandler = e => {
         e.preventDefault()
         this.formTarget.requestSubmit()
-      })
+      }
+      this.lightboxTarget.addEventListener('click', this._lightboxClickHandler)
     } else {
       this.lightboxTarget.style.display = 'none'
       this.cardTarget.style.position = 'relative'
       this.cardTarget.style.zIndex = 'auto'
-      document.querySelector('.app__sidebar').style.zIndex = 'auto'
+      if (this._sidebar) this._sidebar.style.zIndex = 'auto'
+
+      if (this._lightboxClickHandler) {
+        this.lightboxTarget.removeEventListener('click', this._lightboxClickHandler)
+        this._lightboxClickHandler = null
+      }
     }
   }
 }

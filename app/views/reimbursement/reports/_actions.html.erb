@@ -1,4 +1,10 @@
-<% member_viewing = !OrganizerPosition.find_by(user: current_user, event: report.event)&.manager? && current_user != report.user && !admin_signed_in? %>
+<% member_viewing = !@current_user_is_manager && current_user != report.user && !admin_signed_in? %>
+<% all_expenses = report.expenses.to_a %>
+<% expense_count = all_expenses.size %>
+<% to_sum = all_expenses.reject(&:is_fee?) %>
+<% to_sum_count = to_sum.size %>
+<% approved_to_sum_count = to_sum.count(&:approved?) %>
+<% complete_to_sum_count = to_sum.count { |e| !e.memo.nil? && e.amount_cents != 0 && e.receipts.any? } %>
 
 <div class="flex flex-col-reverse" id="action-wrapper">
   <%# Using a reverse column flex container, we can
@@ -23,7 +29,7 @@
                                   button_icon: "plus",
                                   name: "type",
                                   button_container_options: { data: { "file-drop-target": "dropzone", action: "dragover->file-drop#dragover drop->file-drop#drop dragenter->file-drop#dragenter dragleave->file-drop#dragleave" } },
-                                  template: ->(value) { "Add #{report.expenses.count > 0 ? "another" : "a"} #{value} expense" } %>
+                                  template: ->(value) { "Add #{expense_count > 0 ? "another" : "a"} #{value} expense" } %>
               <%= form.file_field :file,
                   multiple: true,
                   include_hidden: false,
@@ -36,7 +42,7 @@
         <% elsif current_user == report.user && !admin_signed_in? %>
           <div class="btn bg-success disabled" class="tooltipped tooltipped--n" aria-label="Expenses can't be added to locked reports">
             <%= inline_icon "plus" %>
-            Add <%= report.expenses.count > 0 ? "another" : "an" %> expense
+            Add <%= expense_count > 0 ? "another" : "an" %> expense
           </div>
         <% elsif !report.closed? %>
           <%= link_to reimbursement_report_reject_path(report_id: report.id), class: "btn bg-error", data: { turbo: true, turbo_method: :post } do %>
@@ -144,7 +150,7 @@
             <%= inline_icon "send" %>
             Submit & request review
             <% button_hint = capture do %>
-              <% if report.expenses.none? %>
+              <% if expense_count == 0 %>
                 Get started by adding an expense to this report.
               <% elsif report.missing_receipts? || report.expenses.any? { |e| e.amount.zero? } %>
                 <span class="bold">Your next step:</span> make sure you have a receipt, memo, and amount for each expense to continue.
@@ -167,12 +173,12 @@
               <span class="bold warning">Warning</span>: your report is beyond your balance. To continue, lower the amount requested.
             <% end %>
           </div>
-        <% elsif report.draft? && report.currency != "USD" && report.wise_transfer_may_exceed_balance? && !report.team_review_required? %>
+        <% elsif report.draft? && report.currency != "USD" && @wise_may_exceed && !report.team_review_required? %>
           <%= link_to reimbursement_report_submit_path(report_id: report.id), class: "btn bg-warning", method: :post, data: { turbo_confirm: "Reports that exceed an organization's balance will be rejected. With current exchange rates, this report exceeds your balance." } do %>
             <%= inline_icon "send" %>
             Submit & request review
             <% button_hint = capture do %>
-              <span class="bold warning">Warning</span>: your report is quoted to cost <%= render_money report.wise_transfer_quote_amount %> USD, which is beyond your balance.
+              <span class="bold warning">Warning</span>: your report is quoted to cost <%= render_money @wise_quote_amount %> USD, which is beyond your balance.
             <% end %>
           <% end %>
         <% elsif report.initial_draft? %>
@@ -191,9 +197,9 @@
               <span class="bold">Your next step:</span> after adding all of your expenses, submit the report to request a review.
             <% end %>
           <% end %>
-        <% elsif report.submitted? && report.currency != "USD" && report.wise_transfer_may_exceed_balance? && policy(report).request_reimbursement? %>
+        <% elsif report.submitted? && report.currency != "USD" && @wise_may_exceed && policy(report).request_reimbursement? %>
           <% button_hint = capture do %>
-            <span class="bold warning">Warning</span>: this report is quoted to cost <%= render_money report.wise_transfer_quote_amount %> USD, which is beyond your balance.
+            <span class="bold warning">Warning</span>: this report is quoted to cost <%= render_money @wise_quote_amount %> USD, which is beyond your balance.
           <% end %>
           <div class="tooltipped tooltipped--n" aria-label="This event may not be fulfill this request.">
             <%= link_to reimbursement_report_request_reimbursement_path(report), class: "btn bg-warning", data: { turbo_confirm: "Reports that exceed an organization's balance will be rejected. With current exchange rates, this report exceeds your balance.", turbo_method: :post } do %>
@@ -213,7 +219,7 @@
               Reimburse <%= report.amount_to_reimburse.format %>
             </div>
           </div>
-        <% elsif report.submitted? && policy(report).approve_all_expenses? && report.expenses.approved.none? %>
+        <% elsif report.submitted? && policy(report).approve_all_expenses? && approved_to_sum_count == 0 %>
           <%= link_to reimbursement_report_approve_all_expenses_path(report), class: "btn bg-success", method: :post do %>
             <%= inline_icon "thumbsup" %>
             Approve all expenses
@@ -325,7 +331,7 @@
       Re-open report for review
     <% end %>
   <% end %>
-  <% if report.expenses.any? %>
+  <% if expense_count > 0 %>
     <div class="card mt2 <%= "closed" if report.closed? || member_viewing %>" id="summary">
       <div class="stat stat--small" style="flex-shrink: 0;">
         <span class="stat__label">Amount requested</span>
@@ -334,7 +340,7 @@
       <% if report.locked? %>
         <div class="stat stat--small stat--plain" style="flex-shrink: 0;">
           <span class="stat__label">Expenses approved</span>
-          <span class="stat__value"><%= report.expenses.approved.to_sum.count %>/<%= report.expenses.to_sum.count %></span>
+          <span class="stat__value"><%= approved_to_sum_count %>/<%= to_sum_count %></span>
         </div>
         <div class="stat stat--small" style="flex-shrink: 0;">
           <span class="stat__label">Amount approved</span>
@@ -349,11 +355,11 @@
       <% else %>
         <div class="stat stat--small stat--plain" style="flex-shrink: 0;">
           <span class="stat__label">Total expenses</span>
-          <span class="stat__value"><%= report.expenses.to_sum.count %></span>
+          <span class="stat__value"><%= to_sum_count %></span>
         </div>
         <div class="stat stat--small stat--plain" style="flex-shrink: 0;">
           <span class="stat__label">Complete</span>
-          <span class="stat__value"><%= report.expenses.to_sum.complete.count %>/<%= report.expenses.to_sum.count %></span>
+          <span class="stat__value"><%= complete_to_sum_count %>/<%= to_sum_count %></span>
         </div>
       <% end %>
       <p class="mt0 mb0" id="summary-hint">
